@@ -1,48 +1,55 @@
-// JWT/Session verification functions
+// src/lib/auth.js
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key';
+const TOKEN_EXPIRY = '7d';
 
-export function generateToken(user) {
+export const generateAuthToken = (user) => {
   return jwt.sign(
-    { 
-      userId: user._id, 
-      email: user.email, 
-      role: user.role,
-      companyId: user.companyId 
-    },
+    { userId: user._id, role: user.role, companyId: user.companyId },
     JWT_SECRET,
-    { expiresIn: '24h' }
+    { expiresIn: TOKEN_EXPIRY }
   );
+};
+
+// --- Server Middleware Helpers for API Routes ---
+
+/**
+ * Helper function to parse user data from a secured request.
+ */
+export const parseUserFromRequest = (request) => {
+    try {
+        const token = request.headers.get('authorization')?.split(' ')[1];
+        if (!token) return null;
+        
+        return jwt.verify(token, JWT_SECRET);
+
+    } catch (error) {
+        return null;
+    }
 }
 
-export function verifyToken(token) {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    throw new Error('Invalid token');
-  }
-}
+/**
+ * Middleware to restrict API access by role.
+ */
+export const withAuth = (handler, requiredRole = null) => {
+  return async (request) => {
+    const authUser = parseUserFromRequest(request);
 
-export function extractTokenFromRequest(request) {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-  return authHeader.substring(7);
-}
+    if (!authUser) {
+      return new Response(JSON.stringify({ message: 'Authentication required.' }), { status: 401 });
+    }
 
-export async function authenticateRequest(request) {
-  const token = extractTokenFromRequest(request);
-  if (!token) {
-    throw new Error('No token provided');
-  }
-  
-  return verifyToken(token);
-}
+    // Admin has access to all restricted routes
+    if (requiredRole && authUser.role !== requiredRole && authUser.role !== 'Admin') {
+      return new Response(JSON.stringify({ message: 'Authorization required.' }), { status: 403 });
+    }
 
-export function requireRole(userToken, requiredRole) {
-  if (userToken.role !== requiredRole) {
-    throw new Error('Insufficient permissions');
-  }
-}
+    // Attach user data to the request object for the handler to access
+    request.user = authUser;
+    
+    return handler(request);
+  };
+};
+
+export const withAdminAuth = (handler) => withAuth(handler, 'Admin');
