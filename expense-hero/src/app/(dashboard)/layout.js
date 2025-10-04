@@ -1,102 +1,65 @@
-// src/components/auth/LoginForm.js
+// src/app/(dashboard)/layout.js
 'use client';
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import jwt from 'jsonwebtoken';
+import Header from '../../components/common/Header';
 
-export default function LoginForm() {
-  const [formData, setFormData] = useState({
-    email: 'admin@testcorp.com', // Pre-fill for easy testing
-    password: 'SecurePassword123'
-  });
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const router = useRouter();
+export default function DashboardLayout({ children }) {
+    const router = useRouter();
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-  const handleInputChange = (e) => {
-    const { id, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [id]: value
-    }));
-  };
+    const checkAuth = () => {
+        const token = localStorage.getItem('authToken');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage('');
+        try {
+            // Note: Decoding locally is for convenience/UI, proper auth check is server-side
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            setUser({ firstName: payload.role, lastName: 'User', role: payload.role }); // Simplified user object
+            setLoading(false);
+        } catch (error) {
+            console.error("Token decoding failed:", error);
+            localStorage.removeItem('authToken');
+            router.push('/login');
+        }
+    };
 
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+    useEffect(() => {
+        checkAuth();
+        // Run on mount and when token changes (though token changes require manual handling or context)
+    }, []); 
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed.');
-      }
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        router.push('/login');
+    };
 
-      // Success: Store token and redirect based on role
-      localStorage.setItem('authToken', data.token);
-      const role = data.user.role;
-      
-      let redirectPath = '/';
-      if (role === 'admin') redirectPath = '/admin/users';
-      else if (role === 'manager') redirectPath = '/manager/approvals';
-      else if (role === 'employee') redirectPath = '/employee/history';
-      
-      setMessage(`Login successful. Redirecting to ${role.toUpperCase()} dashboard...`);
-      router.push(redirectPath);
-
-    } catch (error) {
-      setMessage(`Error: ${error.message}`);
-    } finally {
-      setLoading(false);
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-lg">Loading Dashboard...</div>
+            </div>
+        );
     }
-  };
+    
+    // Simple check: if not logged in, wait for router.push to redirect
+    if (!user) return null; 
 
-  return (
-    <form onSubmit={handleSubmit} className="p-8 bg-white dark:bg-gray-800 shadow-2xl rounded-xl space-y-6 border border-gray-200 dark:border-gray-700">
-      <h2 className="text-3xl font-extrabold text-center text-indigo-600 dark:text-indigo-400">Sign In</h2>
-      
-      <div className="form-group space-y-1">
-        <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
-        <input
-          type="email"
-          id="email"
-          value={formData.email}
-          onChange={handleInputChange}
-          required
-          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
-        />
-      </div>
-
-      <div className="form-group space-y-1">
-        <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-        <input
-          type="password"
-          id="password"
-          value={formData.password}
-          onChange={handleInputChange}
-          required
-          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
-        />
-      </div>
-
-      <button 
-        type="submit" 
-        disabled={loading} 
-        className="w-full p-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? 'Logging in...' : 'Login'}
-      </button>
-      
-      {message && <p className={`mt-4 text-center text-sm ${message.startsWith('Error') ? 'text-red-500' : 'text-green-500'}`}>{message}</p>}
-      
-      <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-        First time setup? <a href="/signup" className="text-indigo-600 hover:underline font-medium">Create Company & Admin</a>
-      </p>
-    </form>
-  );
+    return (
+        <div className="min-h-screen flex flex-col">
+            <Header 
+                title="Expense Hero Dashboard" 
+                user={user} 
+                onLogout={handleLogout} 
+            />
+            <main className="flex-grow p-4">
+                {children}
+            </main>
+        </div>
+    );
 }

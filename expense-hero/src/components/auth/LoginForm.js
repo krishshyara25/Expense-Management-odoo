@@ -47,7 +47,6 @@ export default function LoginForm() {
       localStorage.setItem('authToken', data.token);
       
       // Determine actual role from token payload (safest method)
-      // Fallback to selected role if token decoding fails or is unnecessary
       const decodedUser = jwt.decode(data.token);
       const actualRole = decodedUser ? decodedUser.role : formData.selectedRole;
       
@@ -57,6 +56,9 @@ export default function LoginForm() {
       else if (actualRole === 'employee') redirectPath = '/employee/history';
       
       setMessage(`Login successful as ${actualRole.toUpperCase()}. Redirecting...`);
+      
+      // FIX: Call router.refresh() to clear the router cache before redirecting
+      router.refresh(); 
       router.push(redirectPath);
 
     } catch (error) {

@@ -46,6 +46,7 @@ export const withAuth = (handler, requiredRole = null) => {
     }
 
     // Attach user data to the request object for the handler to access
+    // The handler can access the user data via request.user
     request.user = authUser;
     
     return handler(request);
@@ -53,3 +54,8 @@ export const withAuth = (handler, requiredRole = null) => {
 };
 
 export const withAdminAuth = (handler) => withAuth(handler, 'admin');
+
+/**
+ * Middleware to restrict API access to Managers (and Admins).
+ */
+export const withManagerAuth = (handler) => withAuth(handler, 'manager');

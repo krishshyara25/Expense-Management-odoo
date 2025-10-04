@@ -1,3 +1,4 @@
+// src/app/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -17,14 +18,24 @@ export default function Home() {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUser(payload);
         
-        // Redirect based on role
+        // Determine redirect path
+        let redirectPath = '/';
         if (payload.role === 'admin') {
-          router.push('/admin/users');
+          redirectPath = '/admin/users';
         } else if (payload.role === 'manager') {
-          router.push('/manager/approvals');
+          redirectPath = '/manager/approvals';
         } else if (payload.role === 'employee') {
-          router.push('/employee/history');
+          redirectPath = '/employee/history';
         }
+
+        // FIX: Call router.refresh() before push for clean navigation
+        router.refresh(); 
+        router.push(redirectPath);
+        
+        // Return null here to stop rendering the component
+        // until the navigation is complete.
+        return; 
+
       } catch (error) {
         localStorage.removeItem('authToken');
       }
@@ -40,10 +51,13 @@ export default function Home() {
     );
   }
 
+  // If user is set but the redirect hasn't fully completed yet, 
+  // return null or the loading screen to avoid flicker. 
+  // The logic in useEffect above should now prevent it from reaching here and showing "Redirecting..."
   if (user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Redirecting...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     );
   }

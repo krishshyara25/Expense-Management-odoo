@@ -1,6 +1,7 @@
 // src/app/(dashboard)/admin/users/page.js
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import Table from '../../../../components/common/Table';
 
 export default function AdminUsersPage() {
@@ -8,6 +9,7 @@ export default function AdminUsersPage() {
     const [managers, setManagers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const router = useRouter(); // Initialize router
     
     // State for the creation form
     const [newUserName, setNewUserName] = useState('');
@@ -19,14 +21,27 @@ export default function AdminUsersPage() {
     const getToken = () => localStorage.getItem('authToken');
 
     const fetchUsers = async () => {
+        const token = getToken();
+        if (!token) {
+            setError("Authentication token missing.");
+            router.push('/login'); // Redirect to login if token is missing
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
             const response = await fetch('/api/admin/users', {
-                headers: { 'Authorization': `Bearer ${getToken()}` }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            if (response.status === 401) throw new Error("Unauthorized. Please log in.");
+            if (response.status === 401 || response.status === 403) {
+                // If unauthorized/forbidden by the server, remove token and redirect
+                localStorage.removeItem('authToken');
+                router.push('/login');
+                throw new Error("Session expired or unauthorized access.");
+            }
             if (!response.ok) throw new Error("Failed to fetch users.");
             
             const data = await response.json();
@@ -90,7 +105,8 @@ export default function AdminUsersPage() {
     ];
 
     if (loading) return <div className="p-4">Loading users...</div>;
-    if (error) return <div className="p-4 text-red-500">Error: {error}</div>;
+    // Only show the error if it's not the redirection error
+    if (error && error !== "Session expired or unauthorized access." && error !== "Authentication token missing.") return <div className="p-4 text-red-500">Error: {error}</div>;
 
     return (
         <div className="p-6">
