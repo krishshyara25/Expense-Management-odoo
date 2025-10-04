@@ -1,177 +1,152 @@
-// Core approval logic (Phase 3)
-import Expense from '../models/Expense.js';
-import User from '../models/User.js';
-import Company from '../models/Company.js';
+// src/services/WorkflowService.js
+import User from '../models/User';
+import Company from '../models/Company';
+import ApprovalRule from '../models/ApprovalRule';
+import Expense from '../models/Expense';
 
-class WorkflowService {
-  async submitExpenseForApproval(expenseId, employeeId) {
-    try {
-      const expense = await Expense.findById(expenseId);
-      if (!expense) {
-        throw new Error('Expense not found');
-      }
+/**
+ * Finds the correct ApprovalRule for a given expense and generates the sequence.
+ */
+export async function generateApprovalSteps(expenseData, employee) {
+    const company = await Company.findById(employee.companyId).lean();
+    
+    // Rule Matching: Find best fitting rule by highest threshold amount <= expense amount
+    const rule = await ApprovalRule.findOne({ 
+        companyId: company._id, 
+        thresholdAmount: { $lte: expenseData.amount } 
+    }).sort({ thresholdAmount: -1 }).lean(); 
 
-      if (expense.employeeId.toString() !== employeeId) {
-        throw new Error('Unauthorized');
-      }
-
-      const employee = await User.findById(employeeId);
-      const company = await Company.findById(employee.companyId);
-
-      // Determine approval workflow
-      const approvers = await this.getApprovers(employee, company, expense.amount);
-      
-      // Create approval entries
-      expense.approvals = approvers.map(approverId => ({
-        approverId,
-        status: 'pending'
-      }));
-
-      expense.status = 'submitted';
-      expense.submittedAt = new Date();
-
-      await expense.save();
-
-      // Send notifications to approvers
-      await this.notifyApprovers(expense, approvers);
-
-      return expense;
-    } catch (error) {
-      console.error('Workflow submission error:', error);
-      throw error;
+    // Fallback: Use Admin if no rule matches
+    if (!rule) {
+        const admin = await User.findOne({ companyId: employee.companyId, role: 'Admin' });
+        return {
+            ruleId: null,
+            steps: [{
+                approverId: admin._id,
+                role: 'Admin',
+                status: 'Pending',
+                sequenceOrder: 1,
+                isRequired: true,
+            }]
+        };
     }
-  }
 
-  async getApprovers(employee, company, amount) {
-    const approvers = [];
+    let steps = [];
+    let sequenceOrder = 1;
 
-    // Single level approval - just the manager
-    if (company.settings.approvalWorkflow === 'single') {
-      if (employee.managerId) {
-        approvers.push(employee.managerId);
-      }
-    } else {
-      // Multi-level approval based on amount
-      if (employee.managerId) {
-        approvers.push(employee.managerId);
-      }
-
-      // Add higher level approvers for large amounts
-      if (amount > company.settings.maxExpenseAmount) {
-        const adminUsers = await User.find({
-          companyId: company._id,
-          role: 'admin'
+    // 1. Check if Manager is first approver
+    if (rule.isManagerFirst && employee.managerId) {
+        steps.push({
+            approverId: employee.managerId,
+            role: 'Manager',
+            status: 'Pending',
+            sequenceOrder: sequenceOrder++,
+            isRequired: true, 
         });
-        adminUsers.forEach(admin => {
-          if (!approvers.includes(admin._id)) {
-            approvers.push(admin._id);
-          }
+    }
+
+    // 2. Add remaining Sequential Steps from the rule
+    for (const step of rule.sequentialSteps) {
+        let approverId = step.approverId;
+        
+        // If specific approver not set, try to find a user by role (e.g., 'Finance' or 'Director')
+        if (!approverId) {
+            // Simplification: Find first user with 'Manager' role for non-specific roles
+            const roleApprover = await User.findOne({ companyId: employee.companyId, role: 'Manager' }); 
+            if (roleApprover) approverId = roleApprover._id;
+        }
+
+        if (approverId) {
+            steps.push({
+                approverId: approverId,
+                role: step.role,
+                status: 'Pending',
+                sequenceOrder: sequenceOrder++,
+                isRequired: step.isRequired,
+                minPercentage: step.minPercentage,
+            });
+        }
+    }
+    
+    // Fallback if no steps were generated (e.g., employee has no manager and no rule steps)
+    if (steps.length === 0) {
+        const admin = await User.findOne({ companyId: employee.companyId, role: 'Admin' });
+        steps.push({
+            approverId: admin._id,
+            role: 'Admin',
+            status: 'Pending',
+            sequenceOrder: 1,
+            isRequired: true,
         });
-      }
     }
-
-    return approvers;
-  }
-
-  async approveExpense(expenseId, approverId, comments) {
-    try {
-      const expense = await Expense.findById(expenseId);
-      if (!expense) {
-        throw new Error('Expense not found');
-      }
-
-      const approvalIndex = expense.approvals.findIndex(
-        approval => approval.approverId.toString() === approverId
-      );
-
-      if (approvalIndex === -1) {
-        throw new Error('Not authorized to approve this expense');
-      }
-
-      expense.approvals[approvalIndex].status = 'approved';
-      expense.approvals[approvalIndex].comments = comments;
-      expense.approvals[approvalIndex].approvedAt = new Date();
-
-      // Check if all approvals are complete
-      const allApproved = expense.approvals.every(
-        approval => approval.status === 'approved'
-      );
-
-      if (allApproved) {
-        expense.status = 'approved';
-        expense.approvedAt = new Date();
-      }
-
-      await expense.save();
-
-      // Send notification to employee
-      await this.notifyEmployee(expense, 'approved');
-
-      return expense;
-    } catch (error) {
-      console.error('Approval error:', error);
-      throw error;
-    }
-  }
-
-  async rejectExpense(expenseId, approverId, comments) {
-    try {
-      const expense = await Expense.findById(expenseId);
-      if (!expense) {
-        throw new Error('Expense not found');
-      }
-
-      const approvalIndex = expense.approvals.findIndex(
-        approval => approval.approverId.toString() === approverId
-      );
-
-      if (approvalIndex === -1) {
-        throw new Error('Not authorized to reject this expense');
-      }
-
-      expense.approvals[approvalIndex].status = 'rejected';
-      expense.approvals[approvalIndex].comments = comments;
-      expense.approvals[approvalIndex].approvedAt = new Date();
-
-      expense.status = 'rejected';
-
-      await expense.save();
-
-      // Send notification to employee
-      await this.notifyEmployee(expense, 'rejected');
-
-      return expense;
-    } catch (error) {
-      console.error('Rejection error:', error);
-      throw error;
-    }
-  }
-
-  async getPendingApprovals(approverId) {
-    try {
-      const expenses = await Expense.find({
-        'approvals.approverId': approverId,
-        'approvals.status': 'pending',
-        status: 'submitted'
-      }).populate('employeeId', 'firstName lastName email');
-
-      return expenses;
-    } catch (error) {
-      console.error('Get pending approvals error:', error);
-      throw error;
-    }
-  }
-
-  async notifyApprovers(expense, approvers) {
-    // Email notification logic would go here
-    // For now, just log
-    console.log(`Notifying approvers for expense ${expense._id}:`, approvers);
-  }
-
-  async notifyEmployee(expense, action) {
-    // Email notification logic would go here
-    console.log(`Notifying employee ${expense.employeeId} that expense ${expense._id} was ${action}`);
-  }
+    
+    return { ruleId: rule._id, steps };
 }
 
-export default new WorkflowService();
+/**
+ * Core function to process an approval or rejection step.
+ */
+export async function processApprovalStep(expense, stepIndex, status, comments, approverId) {
+    // Find the step by the sequence index
+    const step = expense.approvalSteps[stepIndex]; 
+
+    if (!step || step.approverId.toString() !== approverId.toString() || step.status !== 'Pending') {
+        throw new Error('Invalid or un-authorized approval step or already processed.');
+    }
+
+    // 1. Update the current step
+    expense.approvalSteps[stepIndex].status = status;
+    expense.approvalSteps[stepIndex].comments = comments;
+    expense.approvalSteps[stepIndex].updatedAt = new Date();
+
+    // Check for immediate REJECTION (by any approver)
+    if (status === 'Rejected') {
+        expense.status = 'Rejected';
+    } else {
+        // 2. Approval Logic
+        
+        // Find the next sequential pending step
+        const nextStepIndex = expense.approvalSteps.findIndex(s => s.status === 'Pending' && s.sequenceOrder > stepIndex + 1);
+
+        if (nextStepIndex !== -1) {
+            // Move to the next sequential step
+            expense.currentStepIndex = nextStepIndex;
+        } else {
+            // No more sequential steps, check overall completion/conditional rules
+            
+            const approvedSteps = expense.approvalSteps.filter(s => s.status === 'Approved');
+            const totalRequiredApprovers = expense.approvalSteps.length;
+            
+            // Basic completion check
+            let shouldApprove = (approvedSteps.length === totalRequiredApprovers);
+            
+            // Check Hybrid/Percentage Rule fulfillment
+            if (!shouldApprove && expense.approvalRuleId) {
+                const rule = await ApprovalRule.findById(expense.approvalRuleId);
+                const totalApproveableSteps = expense.approvalSteps.length; // Max possible approvals
+                
+                // Specific Approver Rule check: Any step marked as isRequired
+                const requiredApproversApproved = expense.approvalSteps
+                    .filter(s => s.isRequired)
+                    .every(s => s.status === 'Approved');
+
+                // Percentage Rule check
+                const minPercentage = rule.sequentialSteps.reduce((max, r) => Math.max(max, r.minPercentage || 0), 0);
+                const percentageApproved = (approvedSteps.length / totalApproveableSteps) * 100;
+                
+                // Hybrid Logic (Required Approvers AND/OR Percentage)
+                if (requiredApproversApproved || percentageApproved >= minPercentage) {
+                    shouldApprove = true;
+                }
+            }
+
+            if (shouldApprove) {
+                expense.status = 'Approved';
+                expense.currentStepIndex = totalRequiredApprovers; // Mark as finished
+            }
+        }
+    }
+
+    await expense.save();
+    return expense;
+}

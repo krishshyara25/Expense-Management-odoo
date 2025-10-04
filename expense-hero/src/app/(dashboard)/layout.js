@@ -1,13 +1,13 @@
-// Shared Layout/Auth check for dashboard
+// src/app/(dashboard)/layout.js
+import Navbar from '../../components/layout/Navbar';
+
 export default function DashboardLayout({ children }) {
-  return (
-    <div className="dashboard-layout">
-      <header>
-        <h1>Expense Management Dashboard</h1>
-      </header>
-      <main>
-        {children}
-      </main>
-    </div>
-  );
+    return (
+        <div>
+            <Navbar />
+            <main className="container mx-auto p-4 mt-4">
+                {children}
+            </main>
+        </div>
+    );
 }
