@@ -1,28 +1,24 @@
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+// src/app/layout.js
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { AuthProvider } from '@/context/AuthContext';
+import Header from '@/components/Header';
+import './globals.css'; // Ensure you have this file with Tailwind imports
 
 export const metadata = {
-  title: "Expense Hero - Smart Expense Management",
-  description: "Streamline your expense management with intelligent approval workflows, OCR receipt processing, and real-time currency conversion.",
+  title: 'ExpenseFlow | Next.js',
+  description: 'Expense Management System Frontend',
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className="bg-gray-50 min-h-screen">
+        <AuthProvider>
+          <Header />
+          <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            {children}
+          </main>
+        </AuthProvider>
       </body>
     </html>
   );
