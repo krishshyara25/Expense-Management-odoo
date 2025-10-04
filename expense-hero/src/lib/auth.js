@@ -41,7 +41,7 @@ export const withAuth = (handler, requiredRole = null) => {
     }
 
     // Admin has access to all restricted routes
-    if (requiredRole && authUser.role !== requiredRole && authUser.role !== 'Admin') {
+    if (requiredRole && authUser.role !== requiredRole && authUser.role !== 'admin') {
       return new Response(JSON.stringify({ message: 'Authorization required.' }), { status: 403 });
     }
 
@@ -52,4 +52,4 @@ export const withAuth = (handler, requiredRole = null) => {
   };
 };
 
-export const withAdminAuth = (handler) => withAuth(handler, 'Admin');
+export const withAdminAuth = (handler) => withAuth(handler, 'admin');

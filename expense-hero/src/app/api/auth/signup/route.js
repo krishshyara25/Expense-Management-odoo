@@ -10,14 +10,17 @@ export async function POST(request) {
     await dbConnect();
     
     try {
+        // --- CRITICAL CHECK: Enforce One Admin Per System ---
         const companyCount = await Company.countDocuments();
         if (companyCount > 0) {
-            return NextResponse.json({ message: 'Company already exists. Only one Admin is allowed to sign up initially.' }, { status: 400 });
+            // If a company exists, deny further admin creation via this route.
+            return NextResponse.json({ message: 'A company already exists. Only one Admin is allowed to sign up initially for system initialization.' }, { status: 400 });
         }
+        // ----------------------------------------------------
 
-        const { email, password, name, baseCurrency } = await request.json();
+        const { email, password, name, companyName, baseCurrency } = await request.json();
 
-        if (!email || !password || !name || !baseCurrency) {
+        if (!email || !password || !name || !companyName || !baseCurrency) {
             return NextResponse.json({ message: 'Missing required fields.' }, { status: 400 });
         }
 
@@ -25,15 +28,15 @@ export async function POST(request) {
         
         // 1. Create Company
         const newCompany = await Company.create({ 
-            name: `${name}'s Company`, 
+            name: companyName, 
             baseCurrency: baseCurrency.toUpperCase() 
         });
 
-        // 2. Create Admin User
+        // 2. Create Admin User (The one and only Admin for this company)
         const newUser = await User.create({
             email,
             password: hashedPassword,
-            role: 'Admin',
+            role: 'admin', // Role is hardcoded to 'admin'
             companyId: newCompany._id,
             name,
         });

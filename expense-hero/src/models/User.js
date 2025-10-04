@@ -7,8 +7,8 @@ const UserSchema = new mongoose.Schema({
     name: { type: String, required: true },
     role: { 
         type: String, 
-        enum: ['Admin', 'Manager', 'Employee'], 
-        default: 'Employee' 
+        enum: ['admin', 'manager', 'employee'], // Ensure consistent lowercase roles
+        default: 'employee' 
     },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
     managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, 
